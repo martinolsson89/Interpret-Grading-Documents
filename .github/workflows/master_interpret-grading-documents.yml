@@ -1,19 +1,15 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-
 name: Build and deploy ASP.Net Core app to Azure Web App - interpret-grading-documents
 
 on:
   push:
-    branches:
-      - master
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -30,15 +26,7 @@ jobs:
         run: dotnet build --configuration Release --no-restore
 
       - name: Publish
-        run: |
-          dotnet publish \
-            --configuration Release \
-            --no-build \
-            --output "${{ github.workspace }}/publish" \
-            -p:UseAppHost=false \
-            -p:DebugType=None \
-            -p:IncludeSymbols=false
-      # ^ avoids shipping apphost, PDBs, symbols (keeps size down)
+        run: dotnet publish --configuration Release --no-build --output "${{ github.workspace }}/publish" -p:UseAppHost=false -p:DebugType=None -p:IncludeSymbols=false
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -50,14 +38,14 @@ jobs:
     runs-on: windows-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: Download artifact from build job
+      - name: Download artifact
         uses: actions/download-artifact@v4
         with:
-          name: .net-app
+          name: webapp-publish
           path: ./publish
       
       - name: Login to Azure
@@ -68,10 +56,8 @@ jobs:
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_B998158BCE2C42BABD30C97504A600AC }}
 
       - name: Deploy to Azure Web App
-        id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'interpret-grading-documents'
-          slot-name: 'Production'
+          app-name: interpret-grading-documents
+          slot-name: Production
           package: ./publish
-          
