@@ -37,9 +37,9 @@ jobs:
 
     - name: Test
       run: dotnet test "${{ env.WORKING_DIRECTORY }}" --no-build
-
+      
     - name: Publish
-      run: dotnet publish "${{ env.WORKING_DIRECTORY }}" --configuration ${{ env.CONFIGURATION }} --no-build --output "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}"
+      run: dotnet publish "${{ env.WORKING_DIRECTORY }}" -c ${{ env.CONFIGURATION }} --no-build -o "${{ env.AZURE_WEBAPP_PACKAGE_PATH }}" -p:DebugType=None -p:DebugSymbols=false
       
     - name: Publish Artifacts
       uses: actions/upload-artifact@v4
@@ -64,6 +64,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_9AF95A9DE458458297A573DB5D7C435C }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4928EC7A9A9D4922BD30DDEA9CF67423 }}
 
+    - name: Enable Run-From-Package
+      run: az webapp config appsettings set --resource-group rg-interpret-grading-documents --name ${{ env.AZURE_WEBAPP_NAME }} --settings WEBSITE_RUN_FROM_PACKAGE=1
+
     - name: Deploy to Azure Web App
       id: deploy-to-webapp
       uses: azure/webapps-deploy@v3
@@ -71,3 +74,4 @@ jobs:
         app-name: 'app-interpret-grading-documents'
         slot-name: 'Production'
         package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+        clean: true
