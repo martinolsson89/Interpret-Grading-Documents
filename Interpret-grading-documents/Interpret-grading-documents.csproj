@@ -10,14 +10,15 @@
 	<ItemGroup>
 		<PackageReference Include="Azure.AI.FormRecognizer" Version="4.1.0" />
 		<PackageReference Include="FuzzySharp" Version="2.0.2" />
-		<PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.0.0" />
+		<PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.8.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
 		<PackageReference Include="OpenAI" Version="2.0.0-beta.13" />
 		<PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
 		<PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
-		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.5" />
+		<PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
 		<PackageReference Include="Spire.PDF" Version="10.10.5" />
 		<PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+		<PackageReference Include="System.Text.Json" Version="9.0.8" />
 	</ItemGroup>
 
 	<ItemGroup>
