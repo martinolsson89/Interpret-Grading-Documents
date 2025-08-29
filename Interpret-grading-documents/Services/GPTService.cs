@@ -3,7 +3,6 @@ using System.Security;
 using OpenAI.Chat;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using ImageMagick;
 using OpenCvSharp;
 using Interpret_grading_documents.Data;
 using Spire.Pdf;
@@ -68,7 +67,7 @@ namespace Interpret_grading_documents.Services
             }
             public string HasValidDegree { get; set; }
         }
-        
+
         public class Subject
         {
             [JsonPropertyName("subject_name")]
@@ -93,7 +92,7 @@ namespace Interpret_grading_documents.Services
         public static async Task<GraduationDocument> ProcessTextPrompts(IFormFile uploadedFile)
 
         {
-            
+
             string tempFilePath = await SaveUploadedFileAsync(uploadedFile);
             string processedImagePath = null;
             string contentType;
@@ -120,7 +119,7 @@ namespace Interpret_grading_documents.Services
                 //var test = RequirementChecker.DoesStudentMeetRequirement(document);
                 //Console.WriteLine(test);
 
-                var updatedDocument = await CompareCourses(document); 
+                var updatedDocument = await CompareCourses(document);
                 ValidateDocument(updatedDocument, reliabilityResult);
 
 

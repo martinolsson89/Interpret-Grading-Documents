@@ -9,28 +9,8 @@ namespace Interpret_grading_documents
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            // Retrieve the Environment Variable
-
-            var apiKey = Environment.GetEnvironmentVariable("AZURE_FORM_RECOGNIZER_API_KEY");
-
-            if (string.IsNullOrEmpty(apiKey))
-            {
-                Console.WriteLine("API key not found. Please set the environment variable.");
-            }
-
             // Add services to the container.
             builder.Services.AddControllersWithViews();
-
-
-
-            // Register Form Recognizer Service
-            //builder.Services.AddSingleton<FormRecognizerService>(provider =>
-            //{
-            //    var configuration = provider.GetRequiredService<IConfiguration>();
-            //    var endpoint = configuration["AzureFormRecognizer:Endpoint"];
-            //    // var apiKey = configuration["AzureFormRecognizer:ApiKey"];
-            //    return new FormRecognizerService(endpoint, apiKey);
-            //});
 
             var app = builder.Build();
 
