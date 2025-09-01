@@ -96,12 +96,22 @@ namespace Interpret_grading_documents.Services
             return null;
         }
 
-        public static Dictionary<string, RequirementResult> DoesStudentMeetRequirement(GPTService.GraduationDocument document, string jsonFilePath)
+        public static Dictionary<string, RequirementResult> DoesStudentMeetRequirement(
+            GPTService.GraduationDocument document,
+            string jsonFilePath)
         {
-            var CourseEquivalents = LoadCourseEquivalents(jsonFilePath); // Load fresh data
-            var allRequirementsMet = new Dictionary<string, RequirementResult>();
+            var courseEquivalents = LoadCourseEquivalents(jsonFilePath);
+            return DoesStudentMeetRequirement(document, courseEquivalents);
+        }
 
-            foreach (var subject in CourseEquivalents.Subjects)
+        public static Dictionary<string, RequirementResult> DoesStudentMeetRequirement(GPTService.GraduationDocument document, CourseEquivalents courseEquivalents)
+        {
+            if (courseEquivalents?.Subjects == null)
+                throw new InvalidOperationException("Course equivalents are missing or malformed.");
+
+            var allRequirementsMet = new Dictionary<string, RequirementResult>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var subject in courseEquivalents.Subjects)
             {
                 foreach (var course in subject.Courses)
                 {
@@ -110,7 +120,7 @@ namespace Interpret_grading_documents.Services
                     int requiredLevel = course.Level;
 
                     double requiredGradeValue = GetGradeValue(requiredGrade);
-                    var equivalentCourses = GetEquivalentCourses(requiredCourseNameOrCode, jsonFilePath);
+                    var equivalentCourses = GetEquivalentCourses(requiredCourseNameOrCode, courseEquivalents);
 
                     bool courseRequirementMet = false;
                     string studentGradeInRequiredCourse = null;
@@ -169,7 +179,7 @@ namespace Interpret_grading_documents.Services
                                             higherLevelCourseName = equivalentCourse.Name;
                                         }
                                     }
-                                    else if (studentGradeValue == 0) 
+                                    else if (studentGradeValue == 0)
                                     {
                                         failedRequiredCourseOrAlternative = true;
                                         otherAlternativeGrades.Add($"{studentSubject.SubjectName}: {studentSubject.Grade}");
@@ -234,82 +244,70 @@ namespace Interpret_grading_documents.Services
             }
         }
 
-        private static List<Course> GetEquivalentCourses(string courseNameOrCode, string jsonFilePath)
+        private static List<Course> GetEquivalentCourses(string courseNameOrCode, CourseEquivalents courseEquivalents)
         {
-            var CourseEquivalents = LoadCourseEquivalents(jsonFilePath); // Load fresh data
+
+            if (courseEquivalents?.Subjects == null)
+                throw new InvalidOperationException("Course equivalents are missing or malformed.");
+
             var equivalentCourses = new List<Course>();
 
-            if (CourseEquivalents != null && CourseEquivalents.Subjects != null)
+            if (courseEquivalents?.Subjects == null) return equivalentCourses;
+
+            foreach (var subject in courseEquivalents.Subjects)
             {
-                foreach (var subject in CourseEquivalents.Subjects)
+                var required = subject.Courses?.FirstOrDefault(c =>
+                    string.Equals(c.Name?.Trim(), courseNameOrCode?.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(c.Code?.Trim(), courseNameOrCode?.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                    (c.Alternatives != null && c.Alternatives.Any(a =>
+                        string.Equals(a.Name?.Trim(), courseNameOrCode?.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(a.Code?.Trim(), courseNameOrCode?.Trim(), StringComparison.OrdinalIgnoreCase)))
+                );
+
+                if (required != null)
                 {
-                    // Try to find the required course in this subject
-                    var requiredCourse = subject.Courses.FirstOrDefault(c =>
-                        c.Name.Equals(courseNameOrCode.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                        c.Code.Equals(courseNameOrCode.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                        (c.Alternatives != null && c.Alternatives.Any(a =>
-                            a.Name.Equals(courseNameOrCode.Trim(), StringComparison.OrdinalIgnoreCase) ||
-                            a.Code.Equals(courseNameOrCode.Trim(), StringComparison.OrdinalIgnoreCase)))
-                    );
+                    int requiredLevel = required.Level;
 
-                    if (requiredCourse != null)
+                    var higherOrEqual = (subject.Courses ?? Enumerable.Empty<Course>()).Where(c => c.Level >= requiredLevel);
+
+                    foreach (var c in higherOrEqual)
                     {
-                        int requiredLevel = requiredCourse.Level;
-
-                        // Get all courses in this subject with level >= requiredLevel
-                        var higherLevelCourses = subject.Courses.Where(c => c.Level >= requiredLevel);
-
-                        foreach (var course in higherLevelCourses)
+                        equivalentCourses.Add(new Course { Name = c.Name, Code = c.Code, Level = c.Level });
+                        if (c.Alternatives != null)
                         {
-                            equivalentCourses.Add(new Course
-                            {
-                                Name = course.Name,
-                                Code = course.Code,
-                                Level = course.Level,
-                                Alternatives = null
-                            });
-
-                            if (course.Alternatives != null)
-                            {
-                                foreach (var alt in course.Alternatives)
-                                {
-                                    equivalentCourses.Add(new Course
-                                    {
-                                        Name = alt.Name,
-                                        Code = alt.Code,
-                                        Level = course.Level,
-                                        Alternatives = null
-                                    });
-                                }
-                            }
+                            foreach (var alt in c.Alternatives)
+                                equivalentCourses.Add(new Course { Name = alt.Name, Code = alt.Code, Level = c.Level });
                         }
-                        break;
                     }
+                    break;
                 }
             }
 
             if (equivalentCourses.Count == 0)
             {
-                Console.WriteLine($"No equivalent courses found for {courseNameOrCode}, adding the original course as its own equivalent");
+                // Fallback: treat the original as its own equivalent
                 equivalentCourses.Add(new Course { Name = courseNameOrCode, Code = courseNameOrCode, Level = 0 });
             }
 
             return equivalentCourses;
         }
 
-        public static double CalculateAverageGrade(GPTService.GraduationDocument document, string jsonFilePath)
+
+        public static double CalculateAverageGrade(GPTService.GraduationDocument document, CourseEquivalents courseEquivalents)
         {
-            var CourseEquivalents = LoadCourseEquivalents(jsonFilePath); // Load fresh data
+            if (courseEquivalents?.Subjects == null)
+                throw new InvalidOperationException("Course equivalents are missing or malformed.");
+
             double totalWeightedGradePoints = 0;
             int totalCoursePoints = 0;
 
-            foreach (var subject in CourseEquivalents.Subjects)
+            foreach (var subject in courseEquivalents.Subjects)
             {
                 foreach (var course in subject.Courses)
                 {
                     if (course.IncludeInAverage)
                     {
-                        var equivalentCourses = GetEquivalentCourses(course.Name, jsonFilePath);
+                        var equivalentCourses = GetEquivalentCourses(course.Name, courseEquivalents);
 
                         foreach (var studentSubject in document.Subjects)
                         {

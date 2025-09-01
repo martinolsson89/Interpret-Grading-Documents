@@ -12,16 +12,20 @@ namespace Interpret_grading_documents.Controllers
     {
         private readonly ILogger<HomeController> _logger;
         private readonly IWebHostEnvironment _hostingEnvironment;
+        private readonly BlobStorageService _blobStorageService;
+
+        private const string UploadsContainer = "uploadfiles";
+        private const string AppDataContainer = "appdata";
+        private const string CourseEquivalentsBlob = "CourseEquivalents.json";
+        private const string CoursesForAverageBlob = "CoursesForAverage.json";
 
         private static Dictionary<string, List<GPTService.GraduationDocument>> _userDocuments = new Dictionary<string, List<GPTService.GraduationDocument>>();
 
-        private readonly string courseEquivalentsFilePath = Path.Combine(Directory.GetCurrentDirectory(), "CourseEquivalents.json");
-        private readonly string coursesForAverageFilePath = Path.Combine(Directory.GetCurrentDirectory(), "CoursesForAverage.json");
-
-        public HomeController(ILogger<HomeController> logger, IWebHostEnvironment hostingEnvironment)
+        public HomeController(ILogger<HomeController> logger, IWebHostEnvironment hostingEnvironment, BlobStorageService blobStorageService)
         {
             _logger = logger;
             _hostingEnvironment = hostingEnvironment;
+            _blobStorageService = blobStorageService;
         }
 
         private string GetUserSessionId()
@@ -69,7 +73,7 @@ namespace Interpret_grading_documents.Controllers
         [HttpGet]
         public async Task<IActionResult> ManageMeritCalculator()
         {
-            var coursesForAverage = LoadCoursesForAverage() ?? new List<CourseForAverage>();
+            var coursesForAverage = await LoadCoursesForAverageAsync() ?? new List<CourseForAverage>();
 
             var validationCourses = ValidationData.GetCombinedCourses();
             var availableCourses = validationCourses.Values.Select(c => new AvailableCourse
@@ -85,32 +89,18 @@ namespace Interpret_grading_documents.Controllers
         }
 
         [HttpPost]
-        public IActionResult SaveCoursesForAverage([FromBody] List<CourseForAverage> coursesForAverage)
+        public async Task<IActionResult> SaveCoursesForAverage([FromBody] List<CourseForAverage> coursesForAverage)
         {
-            SaveCoursesForAverageToFile(coursesForAverage);
+            await SaveCoursesForAverageToBlobAsync(coursesForAverage);
             return Json(new { success = true });
         }
 
-        private List<CourseForAverage> LoadCoursesForAverage()
-        {
-            if (System.IO.File.Exists(coursesForAverageFilePath))
-            {
-                var jsonContent = System.IO.File.ReadAllText(coursesForAverageFilePath);
-                return JsonSerializer.Deserialize<List<CourseForAverage>>(jsonContent);
-            }
-            return null;
-        }
 
-        private void SaveCoursesForAverageToFile(List<CourseForAverage> coursesForAverage)
-        {
-            var jsonContent = JsonSerializer.Serialize(coursesForAverage, new JsonSerializerOptions { WriteIndented = true });
-            System.IO.File.WriteAllText(coursesForAverageFilePath, jsonContent);
-        }
 
-        private List<(string MainCourse, List<string> AlternativeCourses, bool IncludedInAverage)> GetCoursesWithAverageFlag()
+        private async Task<List<(string MainCourse, List<string> AlternativeCourses, bool IncludedInAverage)>> GetCoursesWithAverageFlag()
         {
             var coursesWithAverageFlag = new List<(string MainCourse, List<string> AlternativeCourses, bool IncludedInAverage)>();
-            var courseEquivalents = LoadCourseEquivalents();
+            var courseEquivalents = await LoadCourseEquivalentsAsync();
 
             if (courseEquivalents != null)
             {
@@ -126,10 +116,10 @@ namespace Interpret_grading_documents.Controllers
             return coursesWithAverageFlag;
         }
 
-        private List<(string MainCourse, List<string> AlternativeCourses)> GetCoursesForAverage()
+        private async Task<List<(string MainCourse, List<string> AlternativeCourses)>> GetCoursesForAverage()
         {
             var coursesWithAverageFlag = new List<(string MainCourse, List<string> AlternativeCourses)>();
-            var courseForAverageViewModel = LoadCourseForAverage();
+            var courseForAverageViewModel = await LoadCourseForAverageAsync();
 
             if (courseForAverageViewModel?.CoursesForAverage != null)
             {
@@ -155,30 +145,32 @@ namespace Interpret_grading_documents.Controllers
             string existingPersonalId = userDocuments.FirstOrDefault()?.PersonalId;
             List<GPTService.GraduationDocument> newDocuments = new List<GPTService.GraduationDocument>();
 
+            const string containerName = "uploadfiles";
+
             foreach (var uploadedFile in uploadedFiles)
             {
                 var extractedData = await GPTService.ProcessTextPrompts(uploadedFile);
 
-                // Save the uploaded file to a permanent location
-                var uploadsFolder = Path.Combine(_hostingEnvironment.WebRootPath, "uploads");
-                if (!Directory.Exists(uploadsFolder))
-                {
-                    Directory.CreateDirectory(uploadsFolder);
-                }
                 var uniqueFileName = $"{Guid.NewGuid()}{Path.GetExtension(uploadedFile.FileName).ToLower()}";
-                var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
-                using (var stream = new FileStream(filePath, FileMode.Create))
+                using (var stream = uploadedFile.OpenReadStream())
                 {
-                    await uploadedFile.CopyToAsync(stream);
+                    await _blobStorageService.UploadAsync(
+                        containerName: containerName,
+                        blobName: uniqueFileName,
+                        fileStream: stream,
+                        contentType: uploadedFile.ContentType
+                    );
                 }
 
-                extractedData.FilePath = filePath;
+                var blobUri = uniqueFileName;
+                extractedData.FilePath = blobUri.ToString();
                 extractedData.ContentType = uploadedFile.ContentType;
 
                 // Check if the ImageReliability score is 0
                 if (extractedData.ImageReliability.ReliabilityScore == 0)
                 {
+                    await _blobStorageService.DeleteAsync(UploadsContainer, uniqueFileName);
                     ViewBag.Error = $"The uploaded document {extractedData.DocumentName} has too low a reliability score and cannot be analyzed.";
                     return View("Index", userDocuments);
                 }
@@ -298,7 +290,7 @@ namespace Interpret_grading_documents.Controllers
 
         private async Task<double> CalculateAverageMeritPoints(GPTService.GraduationDocument document)
         {
-            var coursesForAverage = LoadCoursesForAverage();
+            var coursesForAverage = await LoadCoursesForAverageAsync();
             if (coursesForAverage == null) return 0;
 
             // Fetch combined courses from ValidationData for additional course details
@@ -377,7 +369,7 @@ namespace Interpret_grading_documents.Controllers
         [HttpGet]
         public async Task<IActionResult> CourseRequirementsManager()
         {
-            var courseEquivalents = LoadCourseEquivalents() ?? new CourseEquivalents
+            var courseEquivalents = await LoadCourseEquivalentsAsync() ?? new CourseEquivalents
             {
                 Subjects = new List<Subject>()
             };
@@ -396,61 +388,36 @@ namespace Interpret_grading_documents.Controllers
         }
 
         [HttpPost]
-        public IActionResult SaveCourseEquivalents([FromBody] CourseEquivalents courseEquivalents)
+        public async Task<IActionResult> SaveCourseEquivalents([FromBody] CourseEquivalents courseEquivalents)
         {
-            SaveCourseEquivalentsToFile(courseEquivalents);
+            await SaveCourseEquivalentsToBlobAsync(courseEquivalents);
             return Json(new { success = true });
         }
 
-        private CourseEquivalents LoadCourseEquivalents()
+        private async Task<CoursesForAverageViewModel?> LoadCourseForAverageAsync(CancellationToken ct = default)
         {
-            if (System.IO.File.Exists(courseEquivalentsFilePath))
-            {
-                var jsonContent = System.IO.File.ReadAllText(courseEquivalentsFilePath);
-                return JsonSerializer.Deserialize<CourseEquivalents>(jsonContent, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-            }
-            return null;
-        }
+            var courses = await _blobStorageService
+                .DownloadJsonAsync<List<CourseForAverage>>(AppDataContainer, CoursesForAverageBlob, ct);
 
-        private CoursesForAverageViewModel LoadCourseForAverage()
-        {
-            if (System.IO.File.Exists(coursesForAverageFilePath))
-            {
-                var jsonContent = System.IO.File.ReadAllText(coursesForAverageFilePath);
-                var courses = JsonSerializer.Deserialize<List<CourseForAverage>>(jsonContent, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+            if (courses == null) return null;
 
-                return new CoursesForAverageViewModel { CoursesForAverage = courses };
-            }
-            return null;
-        }
-
-        private void SaveCourseEquivalentsToFile(CourseEquivalents courseEquivalents)
-        {
-            var jsonContent = JsonSerializer.Serialize(courseEquivalents, new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNamingPolicy = null
-            });
-            System.IO.File.WriteAllText(courseEquivalentsFilePath, jsonContent);
+            return new CoursesForAverageViewModel { CoursesForAverage = courses };
         }
 
         [HttpGet]
-        public IActionResult CheckRequirements(Guid id)
+        public async Task<IActionResult> CheckRequirements(Guid id)
         {
-            string jsonFilePath = Path.Combine(_hostingEnvironment.ContentRootPath, "CourseEquivalents.json");
+            //string jsonFilePath = Path.Combine(_hostingEnvironment.ContentRootPath, "CourseEquivalents.json");
             var document = GetUserDocuments().Find(d => d.Id == id);
             if (document == null)
             {
                 return NotFound();
             }
 
-            var requirementResults = RequirementChecker.DoesStudentMeetRequirement(document, jsonFilePath);
+            var courseEquivalents = await LoadCourseEquivalentsAsync();
+            if (courseEquivalents is null) return BadRequest("Course equivalents not configured.");
+
+            var requirementResults = RequirementChecker.DoesStudentMeetRequirement(document, courseEquivalents);
 
             var averageMeritPoints = CalculateAverageMeritPoints(document);
 
@@ -469,22 +436,18 @@ namespace Interpret_grading_documents.Controllers
         }
 
         [HttpGet]
-        public IActionResult GetDocumentFile(Guid id)
+        public async Task<IActionResult> GetDocumentFile(Guid id, CancellationToken ct)
         {
             var document = GetUserDocuments().FirstOrDefault(d => d.Id == id);
             if (document == null || string.IsNullOrEmpty(document.FilePath))
-            {
-                return NotFound("Document not found or file unavailable.");
-            }
+                return NotFound("Document not found or blob unavailable.");
 
-            var fileBytes = System.IO.File.ReadAllBytes(document.FilePath);
+            var stream = await _blobStorageService.DownloadAsync(UploadsContainer, document.FilePath, ct);
 
-            if (document.ContentType == "application/pdf")
-            {
+            if (string.Equals(document.ContentType, "application/pdf", StringComparison.OrdinalIgnoreCase))
                 Response.Headers.Add("Content-Disposition", "inline");
-            }
 
-            return File(fileBytes, document.ContentType);
+            return File(stream, document.ContentType ?? "application/octet-stream", enableRangeProcessing: true);
         }
 
         [HttpPost]
@@ -541,5 +504,18 @@ namespace Interpret_grading_documents.Controllers
             }
             return false;
         }
+
+        private async Task SaveCourseEquivalentsToBlobAsync(CourseEquivalents data, CancellationToken ct = default)
+            => await _blobStorageService.UploadJsonAsync(AppDataContainer, CourseEquivalentsBlob, data, ct);
+
+        private async Task<List<CourseForAverage>?> LoadCoursesForAverageAsync(CancellationToken ct = default)
+            => await _blobStorageService.DownloadJsonAsync<List<CourseForAverage>>(AppDataContainer, CoursesForAverageBlob, ct);
+
+        private async Task SaveCoursesForAverageToBlobAsync(List<CourseForAverage> data, CancellationToken ct = default)
+            => await _blobStorageService.UploadJsonAsync(AppDataContainer, CoursesForAverageBlob, data, ct);
+
+        private async Task<CourseEquivalents?> LoadCourseEquivalentsAsync(CancellationToken ct = default)
+            => await _blobStorageService.DownloadJsonAsync<CourseEquivalents>(AppDataContainer, CourseEquivalentsBlob, ct);
+
     }
 }
