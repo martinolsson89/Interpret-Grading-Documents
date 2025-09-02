@@ -59,12 +59,12 @@ namespace Interpret_grading_documents.Controllers
             return _userDocuments[sessionId];
         }
 
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
-            var coursesWithAverageFlag = GetCoursesWithAverageFlag();
+            var coursesWithAverageFlag = await GetCoursesWithAverageFlag();
             ViewBag.CoursesWithAverageFlag = coursesWithAverageFlag;
 
-            var coursesForAverage = GetCoursesForAverage();
+            var coursesForAverage = await GetCoursesForAverage();
             ViewBag.CoursesForAverage = coursesForAverage;
 
             return View(GetUserDocuments());
