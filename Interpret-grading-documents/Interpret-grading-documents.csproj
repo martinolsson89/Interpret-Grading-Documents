@@ -8,6 +8,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<PackageReference Include="Azure.Identity" Version="1.15.0" />
+		<PackageReference Include="Azure.Storage.Blobs" Version="12.25.0" />
 		<PackageReference Include="FuzzySharp" Version="2.0.2" />
 		<PackageReference Include="OpenAI" Version="2.0.0-beta.13" />
 		<PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
