@@ -16,6 +16,7 @@ namespace Interpret_grading_documents
             builder.Services.AddSingleton(new BlobServiceClient(
                     new Uri("https://interpretgradingstorage.blob.core.windows.net"),
                     new DefaultAzureCredential()));
+            builder.Services.AddSingleton<BlobStorageService>();
 
         var app = builder.Build();
 
